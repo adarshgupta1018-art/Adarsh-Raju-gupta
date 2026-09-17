@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Glow aura -->
+    <path
+        android:pathData="M54,23 C53,23 30,55 30,64 C30,73 37,76 45,74 C47.5,73.4 50,71 52,69 L51,83 L43,85 L43,87 L65,87 L65,85 L57,83 L56,69 C58,71 60.5,73.4 63,74 C71,76 78,73 78,64 C78,55 55,23 54,23 Z"
+        android:fillColor="#33FFD700" />
+
+    <!-- Main Metallic Gold Ace Emblem -->
+    <path
+        android:pathData="M54,25 C53,25 32,56 32,64 C32,71 38,74 45,72 C48,71 51,68 53,65 L52,82 L45,84 L45,86 L63,86 L63,84 L56,82 L55,65 C57,68 60,71 63,72 C70,74 76,71 76,64 C76,56 55,25 54,25 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="32"
+                android:startY="25"
+                android:endX="76"
+                android:endY="86">
+                <item android:offset="0.0" android:color="#FFF3A1" />
+                <item android:offset="0.35" android:color="#FFD700" />
+                <item android:offset="0.75" android:color="#D4AF37" />
+                <item android:offset="1.0" android:color="#996515" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Inner Core Cutout for dynamic high-tech esports look -->
+    <path
+        android:pathData="M54,36 L59,48 L54,58 L49,48 Z"
+        android:fillColor="#111115" />
+
+    <path
+        android:pathData="M54,40 L57,48 L54,54 L51,48 Z"
+        android:fillColor="#FFE866" />
+
+    <!-- Golden Gaming Crown accents -->
+    <path
+        android:pathData="M46,30 L50,34 L54,28 L58,34 L62,30 L60,36 L48,36 Z"
+        android:fillColor="#FFDF00" />
+</vector>

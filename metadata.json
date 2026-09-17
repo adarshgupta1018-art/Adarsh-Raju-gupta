@@ -1,0 +1,6 @@
+{
+  "name": "ACE ESPORTS",
+  "description": "ACE ESPORTS Free Fire tournament registrations, confirmations, slot management, and custom room reveals.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
