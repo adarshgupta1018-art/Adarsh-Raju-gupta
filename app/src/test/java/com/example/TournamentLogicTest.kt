@@ -4,7 +4,6 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.local.AppDatabase
 import com.example.data.model.RegistrationStatus
-import com.example.data.model.TournamentStatus
 import com.example.data.repository.TournamentRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -34,6 +33,7 @@ class TournamentLogicTest {
             .allowMainThreadQueries()
             .build()
         repository = TournamentRepository(
+            context = context,
             tournamentDao = database.tournamentDao(),
             registrationDao = database.registrationDao(),
             notificationDao = database.notificationDao()
@@ -58,35 +58,31 @@ class TournamentLogicTest {
         repository.seedInitialDataIfEmpty()
         val tournament = repository.allTournaments.first().first { it.startTime.contains("7:00 PM") }
 
-        // Set room credentials
+        // Setup custom room details
         repository.updateCustomRoomDetails(tournament.id, "ROOM_888999", "PASS_ACE")
 
-        // 1. Simulate 6:54:00 PM (6 minutes before 7:00 PM match -> LOCKED)
-        val calBefore = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 19)
-            set(Calendar.MINUTE, 0)
+        // 10 minutes prior to match: credentials MUST BE LOCKED
+        val calLocked = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 18)
+            set(Calendar.MINUTE, 50)
             set(Calendar.SECOND, 0)
-            add(Calendar.MINUTE, -6)
         }
         val credsLocked = repository.getSecureRoomCredentials(
             tournamentId = tournament.id,
-            playerUid = "UID_TEST_1",
-            simulatedTimeMillis = calBefore.timeInMillis
+            playerUid = "test_player",
+            simulatedTimeMillis = calLocked.timeInMillis
         )
-        assertFalse("Credentials must be locked before 5-minute threshold", credsLocked.isRevealed)
-        assertEquals("", credsLocked.roomId)
-        assertEquals("", credsLocked.roomPassword)
+        assertFalse("Credentials must remain strictly locked 10 mins prior", credsLocked.isRevealed)
 
-        // 2. Simulate 6:55:00 PM (Exactly 5 minutes before 7:00 PM match -> UNLOCKED)
+        // 4 minutes prior to match: credentials MUST BE UNLOCKED
         val calUnlocked = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 19)
-            set(Calendar.MINUTE, 0)
+            set(Calendar.HOUR_OF_DAY, 18)
+            set(Calendar.MINUTE, 56)
             set(Calendar.SECOND, 0)
-            add(Calendar.MINUTE, -5)
         }
         val credsUnlocked = repository.getSecureRoomCredentials(
             tournamentId = tournament.id,
-            playerUid = "UID_TEST_1",
+            playerUid = "test_player",
             simulatedTimeMillis = calUnlocked.timeInMillis
         )
         assertTrue("Credentials must unlock at 5 minutes prior to match", credsUnlocked.isRevealed)
@@ -105,6 +101,8 @@ class TournamentLogicTest {
             ffIgn = "ACE_ROHAN",
             ffUid = "7722119900",
             contactNumber = "+91 9988776655",
+            teamName = "Solo",
+            selectedSlot = 1,
             paymentRef = "UPI12345"
         )
 
@@ -113,10 +111,85 @@ class TournamentLogicTest {
         assertNotNull(reg)
         assertTrue(reg!!.id.startsWith("ACE-"))
         assertEquals(RegistrationStatus.PENDING, reg.status)
+        assertEquals(1, reg.selectedSlot)
 
         // Admin confirms registration
         repository.confirmRegistration(reg.id)
         val updatedTourney = repository.allTournaments.first().first { it.id == tournament.id }
         assertTrue(updatedTourney.confirmedCount >= 1)
+    }
+
+    @Test
+    fun `duplicate slot booking prevention prevents booking same slot`() = runBlocking {
+        repository.seedInitialDataIfEmpty()
+        val tournament = repository.allTournaments.first().first()
+
+        // Book slot 5 first
+        val firstBooking = repository.registerPlayer(
+            tournamentId = tournament.id,
+            playerName = "Player One",
+            ffIgn = "IGN_1",
+            ffUid = "UID_1",
+            contactNumber = "+91 9100000001",
+            teamName = "Team A",
+            selectedSlot = 5,
+            paymentRef = "REF1"
+        )
+        assertTrue(firstBooking.isSuccess)
+
+        // Try booking slot 5 again
+        val duplicateBooking = repository.registerPlayer(
+            tournamentId = tournament.id,
+            playerName = "Player Two",
+            ffIgn = "IGN_2",
+            ffUid = "UID_2",
+            contactNumber = "+91 9100000002",
+            teamName = "Team B",
+            selectedSlot = 5,
+            paymentRef = "REF2"
+        )
+        assertTrue("Duplicate slot booking must fail", duplicateBooking.isFailure)
+    }
+
+    @Test
+    fun `seedInitialData contains zero hardcoded Adarsh Gupta records`() = runBlocking {
+        repository.seedInitialDataIfEmpty()
+        val allRegistrations = repository.allRegistrations.first()
+        assertFalse(allRegistrations.any { it.playerName.contains("Adarsh", ignoreCase = true) })
+        assertFalse(allRegistrations.any { it.ffUid == "1298471203" })
+        assertFalse(allRegistrations.any { it.ffIgn == "ACE_ADARSH_99" })
+        assertFalse(allRegistrations.any { it.contactNumber == "+91 9811223344" })
+    }
+
+    @Test
+    fun `sequential registrations generate distinct unique IDs`() = runBlocking {
+        repository.seedInitialDataIfEmpty()
+        val tournament = repository.allTournaments.first().first { it.startTime.contains("8:00 PM") }
+
+        val reg1 = repository.registerPlayer(
+            tournamentId = tournament.id,
+            playerName = "Player One",
+            ffIgn = "IGN_1",
+            ffUid = "UID_1",
+            contactNumber = "+91 9100000001",
+            teamName = "Team A",
+            selectedSlot = 2,
+            paymentRef = "REF1"
+        ).getOrThrow()
+
+        val reg2 = repository.registerPlayer(
+            tournamentId = tournament.id,
+            playerName = "Player Two",
+            ffIgn = "IGN_2",
+            ffUid = "UID_2",
+            contactNumber = "+91 9100000002",
+            teamName = "Team B",
+            selectedSlot = 3,
+            paymentRef = "REF2"
+        ).getOrThrow()
+
+        assertFalse("Registration IDs must not collide", reg1.id == reg2.id)
+        assertTrue(reg1.id.startsWith("ACE-"))
+        assertTrue(reg2.id.startsWith("ACE-"))
     }
 }

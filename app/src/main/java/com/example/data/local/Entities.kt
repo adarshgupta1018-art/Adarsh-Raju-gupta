@@ -23,7 +23,8 @@ data class TournamentEntity(
     val status: TournamentStatus,
     val roomId: String,
     val roomPassword: String,
-    val revealMinutesBefore: Int
+    val revealMinutesBefore: Int,
+    val winningPrize: String = ""
 )
 
 @Entity(tableName = "registrations")
@@ -35,9 +36,15 @@ data class RegistrationEntity(
     val ffIgn: String,
     val ffUid: String,
     val contactNumber: String,
+    val teamName: String = "",
+    val selectedSlot: Int = 1,
     val entryFee: Int,
-    val paymentRef: String,
+    val winningPrize: String = "",
+    val paymentRef: String = "",
+    val paymentScreenshotUrl: String = "",
+    val paymentStatus: String = "PENDING",
     val status: RegistrationStatus,
+    val adminNotes: String = "",
     val registeredAt: Long
 )
 

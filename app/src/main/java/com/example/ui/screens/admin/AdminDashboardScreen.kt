@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.Key
@@ -54,6 +55,7 @@ import com.example.ui.theme.EsportsSurface
 import com.example.ui.theme.EsportsSurfaceVariant
 import com.example.ui.theme.GoldLight
 import com.example.ui.theme.GoldPrimary
+import com.example.ui.theme.RedRejected
 import com.example.ui.theme.TextGold
 import com.example.ui.theme.TextGray
 import com.example.ui.theme.TextMuted
@@ -107,10 +109,17 @@ fun AdminDashboardScreen(
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     StatCard(
-                        title = "TODAY'S TOURNAMENTS",
-                        value = "${stats.todayTournamentsCount}",
-                        icon = Icons.Default.Today,
+                        title = "TOTAL SLOTS",
+                        value = "${stats.totalSlots}",
+                        icon = Icons.Default.SportsEsports,
                         accentColor = GoldPrimary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    StatCard(
+                        title = "AVAILABLE SLOTS",
+                        value = "${stats.totalAvailableSlots}",
+                        icon = Icons.Default.SportsEsports,
+                        accentColor = GoldLight,
                         modifier = Modifier.weight(1f)
                     )
                     StatCard(
@@ -141,10 +150,10 @@ fun AdminDashboardScreen(
                         modifier = Modifier.weight(1f)
                     )
                     StatCard(
-                        title = "AVAILABLE SLOTS",
-                        value = "${stats.totalAvailableSlots}",
-                        icon = Icons.Default.SportsEsports,
-                        accentColor = GoldLight,
+                        title = "REJECTED REGISTRATIONS",
+                        value = "${stats.rejectedRegistrations}",
+                        icon = Icons.Default.Cancel,
+                        accentColor = RedRejected,
                         modifier = Modifier.weight(1f)
                     )
                 }

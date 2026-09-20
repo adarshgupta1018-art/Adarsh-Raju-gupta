@@ -15,11 +15,12 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -46,7 +47,6 @@ import com.example.ui.components.GoldButton
 import com.example.ui.components.GoldOutlinedButton
 import com.example.ui.theme.EsportsSurface
 import com.example.ui.theme.EsportsSurfaceVariant
-import com.example.ui.theme.GoldLight
 import com.example.ui.theme.GoldPrimary
 import com.example.ui.theme.TextGray
 import com.example.ui.theme.TextMuted
@@ -55,12 +55,16 @@ import com.example.ui.theme.TextWhite
 @Composable
 fun AdminLoginDialog(
     onDismiss: () -> Unit,
-    onLogin: (String) -> Boolean
+    isLoading: Boolean = false,
+    isFirebaseConfigured: Boolean = true,
+    onLogin: (email: String, pass: String, callback: (Boolean, String?) -> Unit) -> Unit
 ) {
+    var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var errorText by remember { mutableStateOf<String?>(null) }
+    var inProgress by remember { mutableStateOf(false) }
 
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(onDismissRequest = { if (!inProgress && !isLoading) onDismiss() }) {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -71,6 +75,7 @@ fun AdminLoginDialog(
             border = BorderStroke(1.2.dp, GoldPrimary)
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
+                // Title
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -85,14 +90,17 @@ fun AdminLoginDialog(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "ADMIN LOGIN",
+                            text = "ADMIN PORTAL LOGIN",
                             color = GoldPrimary,
-                            fontSize = 17.sp,
+                            fontSize = 16.sp,
                             fontWeight = FontWeight.Black
                         )
                     }
 
-                    IconButton(onClick = onDismiss) {
+                    IconButton(
+                        onClick = onDismiss,
+                        enabled = !inProgress && !isLoading
+                    ) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "Close",
@@ -102,21 +110,60 @@ fun AdminLoginDialog(
                 }
 
                 Text(
-                    text = "Enter secure admin credentials to access registration management and Custom Room systems.",
+                    text = "Sign in securely via Firebase Authentication to manage player registrations and custom room credentials.",
                     color = TextGray,
-                    fontSize = 11.sp
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Passcode input
+                // Email Field
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = {
+                        email = it
+                        errorText = null
+                    },
+                    label = { Text("Admin Email Address", color = TextMuted) },
+                    placeholder = { Text("admin@aceesports.com", color = TextMuted) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Email,
+                            contentDescription = null,
+                            tint = GoldPrimary
+                        )
+                    },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Email,
+                        imeAction = ImeAction.Next
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("admin_email_input"),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = GoldPrimary,
+                        unfocusedBorderColor = Color(0xFF333544),
+                        focusedTextColor = TextWhite,
+                        unfocusedTextColor = TextWhite,
+                        focusedContainerColor = EsportsSurfaceVariant,
+                        unfocusedContainerColor = EsportsSurfaceVariant
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Password Field
                 OutlinedTextField(
                     value = password,
                     onValueChange = {
                         password = it
                         errorText = null
                     },
-                    label = { Text("Admin Passcode / Password", color = TextMuted) },
+                    label = { Text("Admin Password", color = TextMuted) },
+                    placeholder = { Text("Enter your secure password", color = TextMuted) },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Default.Lock,
@@ -125,14 +172,23 @@ fun AdminLoginDialog(
                         )
                     },
                     visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Password,
                         imeAction = ImeAction.Done
                     ),
                     keyboardActions = KeyboardActions(
                         onDone = {
-                            if (!onLogin(password)) {
-                                errorText = "Invalid passcode. Try 'admin123' or '7777'"
+                            if (email.isNotBlank() && password.isNotBlank()) {
+                                inProgress = true
+                                onLogin(email.trim(), password.trim()) { success, err ->
+                                    inProgress = false
+                                    if (!success) {
+                                        errorText = err ?: "Authentication failed. Check your credentials."
+                                    }
+                                }
+                            } else {
+                                errorText = "Please enter both admin email and password."
                             }
                         }
                     ),
@@ -151,49 +207,46 @@ fun AdminLoginDialog(
                 )
 
                 if (errorText != null) {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = errorText ?: "",
-                        color = Color(0xFFEF4444),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0x26EF4444),
+                        border = BorderStroke(1.dp, Color(0xFFEF4444)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "⚠️ ${errorText ?: ""}",
+                            color = Color(0xFFFCA5A5),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Preset test credentials helper
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = Color(0x1AFFD700),
-                    border = BorderStroke(1.dp, Color(0x33FFD700)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(10.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                if (!isFirebaseConfigured) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0x1AFBBF24),
+                        border = BorderStroke(1.dp, Color(0x44FBBF24)),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column {
+                        Column(modifier = Modifier.padding(10.dp)) {
                             Text(
-                                text = "TEST ADMIN CREDENTIALS",
-                                color = GoldLight,
-                                fontSize = 10.sp,
+                                text = "🔒 Secure Firebase Backend",
+                                color = Color(0xFFFDE68A),
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "Passcode: admin123 (or PIN: 7777)",
-                                color = TextWhite,
-                                fontSize = 11.sp
+                                text = "Add google-services.json to the app/ directory to enable real-time Firebase Auth & Firestore live synchronization.",
+                                color = Color(0xFFD1D5DB),
+                                fontSize = 10.sp,
+                                lineHeight = 14.sp
                             )
                         }
-                        GoldOutlinedButton(
-                            text = "AUTO-FILL",
-                            onClick = { password = "admin123" },
-                            modifier = Modifier.height(32.dp)
-                        )
                     }
                 }
 
@@ -206,18 +259,28 @@ fun AdminLoginDialog(
                     GoldOutlinedButton(
                         text = "CANCEL",
                         onClick = onDismiss,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        enabled = !inProgress && !isLoading
                     )
                     GoldButton(
-                        text = "AUTHENTICATE",
+                        text = if (inProgress || isLoading) "SIGNING IN..." else "SECURE LOGIN",
                         onClick = {
-                            if (!onLogin(password)) {
-                                errorText = "Invalid passcode. Try 'admin123' or '7777'"
+                            if (email.isBlank() || password.isBlank()) {
+                                errorText = "Please enter both admin email and password."
+                            } else {
+                                inProgress = true
+                                onLogin(email.trim(), password.trim()) { success, err ->
+                                    inProgress = false
+                                    if (!success) {
+                                        errorText = err ?: "Authentication failed."
+                                    }
+                                }
                             }
                         },
                         modifier = Modifier
                             .weight(1.4f)
-                            .testTag("admin_login_submit_btn")
+                            .testTag("admin_login_submit_btn"),
+                        enabled = !inProgress && !isLoading
                     )
                 }
             }

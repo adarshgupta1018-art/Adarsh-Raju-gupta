@@ -1,8 +1,12 @@
 package com.example.viewmodel
 
 import android.app.Application
+import android.content.Context
+import android.net.Uri
+import java.io.File
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.firebase.FirebaseManager
 import com.example.data.local.AppDatabase
 import com.example.data.model.NotificationItem
 import com.example.data.model.RegistrationItem
@@ -12,6 +16,8 @@ import com.example.data.model.TournamentItem
 import com.example.data.model.TournamentStatus
 import com.example.data.model.UserProfile
 import com.example.data.model.UserRole
+import com.example.data.payment.PaymentConfig
+import com.example.data.payment.PaymentConfigManager
 import com.example.data.repository.TournamentRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,32 +48,64 @@ enum class AdminNavTab {
 
 data class DashboardStats(
     val todayTournamentsCount: Int = 8,
+    val totalSlots: Int = 160,
     val totalRegistrations: Int = 0,
     val pendingRegistrations: Int = 0,
     val confirmedPlayers: Int = 0,
+    val rejectedRegistrations: Int = 0,
     val totalAvailableSlots: Int = 0
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getDatabase(application)
     private val repository = TournamentRepository(
+        context = application,
         tournamentDao = database.tournamentDao(),
         registrationDao = database.registrationDao(),
         notificationDao = database.notificationDao()
     )
 
-    // Current User
+    private val prefs = application.getSharedPreferences("ace_esports_player_prefs", android.content.Context.MODE_PRIVATE)
+    private val paymentConfigManager = PaymentConfigManager(application)
+    val paymentConfig: StateFlow<PaymentConfig> = paymentConfigManager.configFlow
+    private val _mySubmittedRegistrationIds = MutableStateFlow<Set<String>>(emptySet())
+
+    // Current User starts empty (no hardcoded demo data)
     private val _currentUser = MutableStateFlow(
         UserProfile(
-            id = "usr_001",
-            name = "Adarsh Gupta",
-            ffIgn = "ACE_ADARSH_99",
-            ffUid = "1298471203",
-            contactNumber = "+91 9811223344",
+            id = "usr_guest",
+            name = "",
+            ffIgn = "",
+            ffUid = "",
+            contactNumber = "",
             role = UserRole.PLAYER
         )
     )
     val currentUser: StateFlow<UserProfile> = _currentUser.asStateFlow()
+
+    init {
+        val savedName = prefs.getString("player_name", "") ?: ""
+        val savedIgn = prefs.getString("player_ff_ign", "") ?: ""
+        val savedUid = prefs.getString("player_ff_uid", "") ?: ""
+        val savedPhone = prefs.getString("player_phone", "") ?: ""
+        val savedRegIds = prefs.getStringSet("player_submitted_reg_ids", emptySet()) ?: emptySet()
+
+        if (savedName == "Adarsh Gupta" || savedUid == "1298471203") {
+            prefs.edit().clear().apply()
+        } else {
+            _mySubmittedRegistrationIds.value = savedRegIds
+            if (savedUid.isNotBlank()) {
+                _currentUser.value = UserProfile(
+                    id = "usr_${savedUid.takeLast(6)}",
+                    name = savedName,
+                    ffIgn = savedIgn,
+                    ffUid = savedUid,
+                    contactNumber = savedPhone,
+                    role = UserRole.PLAYER
+                )
+            }
+        }
+    }
 
     // Panel State (Player vs Admin)
     private val _currentRole = MutableStateFlow(UserRole.PLAYER)
@@ -123,9 +161,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val playerRegistrations: StateFlow<List<RegistrationItem>> = combine(
         repository.allRegistrations,
-        _currentUser
-    ) { regs, user ->
-        regs.filter { it.ffUid == user.ffUid }
+        _currentUser,
+        _mySubmittedRegistrationIds
+    ) { regs, user, submittedIds ->
+        regs.filter { reg ->
+            submittedIds.contains(reg.id) ||
+            (user.ffUid.isNotBlank() && reg.ffUid == user.ffUid)
+        }
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -165,13 +207,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val totalRegs = regs.size
         val pending = regs.count { it.status == RegistrationStatus.PENDING }
         val confirmed = regs.count { it.status == RegistrationStatus.CONFIRMED }
+        val rejected = regs.count { it.status == RegistrationStatus.REJECTED }
+        val totalSlots = tourneys.sumOf { it.maxSlots }
         val available = tourneys.sumOf { it.availableSlots }
 
         DashboardStats(
             todayTournamentsCount = tourneys.size,
+            totalSlots = if (totalSlots > 0) totalSlots else 160,
             totalRegistrations = totalRegs,
             pendingRegistrations = pending,
             confirmedPlayers = confirmed,
+            rejectedRegistrations = rejected,
             totalAvailableSlots = available
         )
     }.stateIn(
@@ -212,22 +258,54 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun authenticateAdmin(password: String): Boolean {
-        // Preset admin credentials: admin123, 7777, or aceadmin
-        val isValid = password == "admin123" || password == "7777" || password == "aceadmin"
-        if (isValid) {
-            _isAdminAuthenticated.value = true
-            _currentRole.value = UserRole.ADMIN
-            showSnackbar("Admin logged in successfully")
-            return true
-        } else {
-            showSnackbar("Incorrect admin passcode. Try 'admin123' or '7777'")
-            return false
+    private val _adminEmail = MutableStateFlow<String?>(null)
+    val adminEmail: StateFlow<String?> = _adminEmail.asStateFlow()
+
+    private val _adminLoginLoading = MutableStateFlow(false)
+    val adminLoginLoading: StateFlow<Boolean> = _adminLoginLoading.asStateFlow()
+
+    private val _isFirebaseConfigured = MutableStateFlow(FirebaseManager.isFirebaseConfigured(application))
+    val isFirebaseConfigured: StateFlow<Boolean> = _isFirebaseConfigured.asStateFlow()
+
+    fun authenticateAdminWithFirebase(
+        email: String,
+        pass: String,
+        onResult: (Boolean, String?) -> Unit
+    ) {
+        if (email.isBlank() || pass.isBlank()) {
+            val err = "Please enter both admin email and password."
+            showSnackbar(err)
+            onResult(false, err)
+            return
+        }
+
+        _adminLoginLoading.value = true
+        viewModelScope.launch {
+            val result = FirebaseManager.signInAdmin(getApplication(), email, pass)
+            _adminLoginLoading.value = false
+            result.onSuccess { user ->
+                _isAdminAuthenticated.value = true
+                _adminEmail.value = user.email ?: email
+                _currentRole.value = UserRole.ADMIN
+                showSnackbar("Admin logged in: ${user.email ?: email}")
+                onResult(true, null)
+            }.onFailure { err ->
+                val configured = FirebaseManager.isFirebaseConfigured(getApplication())
+                val message = if (!configured) {
+                    "Firebase not configured: Add google-services.json to the app/ directory and enable Email/Password authentication."
+                } else {
+                    err.localizedMessage ?: "Invalid admin email or password."
+                }
+                showSnackbar(message)
+                onResult(false, message)
+            }
         }
     }
 
     fun logoutAdmin() {
+        FirebaseManager.signOutAdmin(getApplication())
         _isAdminAuthenticated.value = false
+        _adminEmail.value = null
         _currentRole.value = UserRole.PLAYER
         _playerTab.value = PlayerNavTab.HOME
         showSnackbar("Logged out of Admin Panel")
@@ -270,39 +348,136 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         ffIgn: String,
         ffUid: String,
         phone: String,
-        paymentRef: String
+        teamName: String = "",
+        selectedSlot: Int,
+        paymentRef: String,
+        paymentScreenshotUrl: String = "",
+        chosenFee: Int? = null,
+        winningPrize: String? = null,
+        onComplete: (Result<RegistrationItem>) -> Unit = {}
     ) {
-        val tournament = _selectedTournamentForRegistration.value ?: return
+        val tournament = _selectedTournamentForRegistration.value ?: run {
+            val err = "No tournament selected"
+            showSnackbar(err)
+            onComplete(Result.failure(Exception(err)))
+            return
+        }
 
-        if (fullName.isBlank() || ffIgn.isBlank() || ffUid.isBlank() || phone.isBlank()) {
-            showSnackbar("Please fill in all required fields")
+        if (fullName.isBlank()) {
+            val err = "Please enter your full name."
+            showSnackbar(err)
+            onComplete(Result.failure(Exception(err)))
+            return
+        }
+        if (ffIgn.isBlank()) {
+            val err = "Please enter your Free Fire IGN."
+            showSnackbar(err)
+            onComplete(Result.failure(Exception(err)))
+            return
+        }
+        if (ffUid.isBlank()) {
+            val err = "Please enter your Free Fire UID."
+            showSnackbar(err)
+            onComplete(Result.failure(Exception(err)))
+            return
+        }
+        if (phone.isBlank()) {
+            val err = "Please enter your WhatsApp number."
+            showSnackbar(err)
+            onComplete(Result.failure(Exception(err)))
+            return
+        }
+        if (selectedSlot < 1 || selectedSlot > tournament.maxSlots) {
+            val err = "Please select a valid slot between 1 and ${tournament.maxSlots}."
+            showSnackbar(err)
+            onComplete(Result.failure(Exception(err)))
+            return
+        }
+        if (paymentRef.trim().isBlank()) {
+            val err = "Compulsory Payment: Please complete payment via QR and enter your Transaction ID/UTR."
+            showSnackbar(err)
+            onComplete(Result.failure(Exception(err)))
             return
         }
 
         viewModelScope.launch {
             val result = repository.registerPlayer(
                 tournamentId = tournament.id,
-                playerName = fullName,
-                ffIgn = ffIgn,
-                ffUid = ffUid,
-                contactNumber = phone,
-                paymentRef = paymentRef
+                playerName = fullName.trim(),
+                ffIgn = ffIgn.trim(),
+                ffUid = ffUid.trim(),
+                contactNumber = phone.trim(),
+                teamName = teamName.trim(),
+                selectedSlot = selectedSlot,
+                paymentRef = paymentRef.trim(),
+                paymentScreenshotUrl = paymentScreenshotUrl.trim(),
+                chosenFee = chosenFee,
+                winningPrize = winningPrize
             )
 
             result.onSuccess { reg ->
-                // Update current user profile with entered details
-                _currentUser.value = _currentUser.value.copy(
-                    name = fullName,
-                    ffIgn = ffIgn,
-                    ffUid = ffUid,
-                    contactNumber = phone
+                // Add to submitted IDs
+                val updatedIds = _mySubmittedRegistrationIds.value + reg.id
+                _mySubmittedRegistrationIds.value = updatedIds
+
+                // Update current user profile
+                val updatedProfile = _currentUser.value.copy(
+                    name = fullName.trim(),
+                    ffIgn = ffIgn.trim(),
+                    ffUid = ffUid.trim(),
+                    contactNumber = phone.trim()
                 )
-                _selectedTournamentForRegistration.value = null
-                showSnackbar("Registration Submitted! ID: ${reg.id} (Status: PENDING)")
-                _playerTab.value = PlayerNavTab.MY_REGISTRATIONS
+                _currentUser.value = updatedProfile
+
+                // Persist locally in preferences
+                prefs.edit()
+                    .putString("player_name", fullName.trim())
+                    .putString("player_ff_ign", ffIgn.trim())
+                    .putString("player_ff_uid", ffUid.trim())
+                    .putString("player_phone", phone.trim())
+                    .putStringSet("player_submitted_reg_ids", updatedIds)
+                    .apply()
+
+                showSnackbar("Payment Submitted: Registration #${reg.id} is PENDING Admin verification.")
+                onComplete(Result.success(reg))
             }.onFailure { err ->
                 showSnackbar(err.message ?: "Failed to register")
+                onComplete(Result.failure(err))
             }
+        }
+    }
+
+    fun updatePaymentConfig(upiId: String, payeeName: String, upiNote: String = "Free Fire Tournament Entry Fee", qrCodeUri: String? = null) {
+        paymentConfigManager.updateConfig(upiId, payeeName, upiNote, qrCodeUri)
+        showSnackbar("Payment settings saved (UPI: $upiId)")
+    }
+
+    fun uploadPaymentQrCode(context: Context, uri: Uri, onResult: (Boolean) -> Unit = {}) {
+        try {
+            val file = File(context.filesDir, "custom_qr_${System.currentTimeMillis()}.png")
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                file.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            paymentConfigManager.setQrCodeUri(file.absolutePath)
+            showSnackbar("Payment QR Code image updated!")
+            onResult(true)
+        } catch (e: Exception) {
+            showSnackbar("Failed to save QR code image: ${e.message}")
+            onResult(false)
+        }
+    }
+
+    fun resetPaymentQrCode() {
+        paymentConfigManager.resetToDefault()
+        showSnackbar("Payment settings reset to default.")
+    }
+
+    fun updateTournamentFeeAndPrize(tournamentId: String, newEntryFee: Int, newWinningPrize: String) {
+        viewModelScope.launch {
+            repository.updateTournamentFeeAndPrize(tournamentId, newEntryFee, newWinningPrize)
+            showSnackbar("Tournament fee and prize updated successfully!")
         }
     }
 
@@ -317,6 +492,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.rejectRegistration(regId, reason)
             showSnackbar("Registration rejected.")
+        }
+    }
+
+    fun updateRegistrationStatusAndNotes(
+        regId: String,
+        newStatus: RegistrationStatus,
+        newPaymentStatus: String,
+        adminNotes: String
+    ) {
+        viewModelScope.launch {
+            repository.updateRegistrationStatusAndNotes(regId, newStatus, newPaymentStatus, adminNotes)
+            showSnackbar("Registration updated: $newStatus ($newPaymentStatus)")
+        }
+    }
+
+    fun updateTournament(tournament: TournamentItem) {
+        viewModelScope.launch {
+            repository.updateTournament(tournament)
+            showSnackbar("Tournament ${tournament.startTime} updated successfully.")
+        }
+    }
+
+    fun addTournamentSession(tournament: TournamentItem) {
+        viewModelScope.launch {
+            repository.addTournament(tournament)
+            showSnackbar("New tournament session created: ${tournament.startTime}")
         }
     }
 

@@ -120,14 +120,14 @@ fun ProfileScreen(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Text(
-                        text = user.ffIgn,
+                        text = if (user.ffIgn.isNotBlank()) user.ffIgn else "ACE ESPORTS PLAYER",
                         color = GoldLight,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Black
                     )
 
                     Text(
-                        text = "UID: ${user.ffUid}",
+                        text = if (user.ffUid.isNotBlank()) "UID: ${user.ffUid}" else "UID: Not Set (Register for a Match)",
                         color = TextWhite,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold
@@ -269,6 +269,11 @@ fun ProfileInfoRow(label: String, value: String) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(text = label, color = TextMuted, fontSize = 12.sp)
-        Text(text = value, color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+        Text(
+            text = if (value.isNotBlank()) value else "Not Set",
+            color = if (value.isNotBlank()) TextWhite else TextMuted,
+            fontWeight = FontWeight.Bold,
+            fontSize = 13.sp
+        )
     }
 }

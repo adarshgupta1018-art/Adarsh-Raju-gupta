@@ -81,6 +81,7 @@ fun MainAppContent(viewModel: MainViewModel) {
     val currentTickerMillis by viewModel.currentTickerTimeMillis.collectAsState()
     val snackbarMsg by viewModel.snackbarMessage.collectAsState()
     val activeRoomCredentials by viewModel.activeRoomCredentials.collectAsState()
+    val paymentConfig by viewModel.paymentConfig.collectAsState()
 
     var showAdminLoginDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -158,7 +159,10 @@ fun MainAppContent(viewModel: MainViewModel) {
                     AdminNavTab.REGISTRATIONS -> AdminRegistrationsScreen(
                         registrations = allRegistrations,
                         onConfirm = { viewModel.confirmRegistration(it) },
-                        onReject = { viewModel.rejectRegistration(it) }
+                        onReject = { id, reason -> viewModel.rejectRegistration(id, reason) },
+                        onUpdateNotes = { regId, status, paymentStatus, notes ->
+                            viewModel.updateRegistrationStatusAndNotes(regId, status, paymentStatus, notes)
+                        }
                     )
                     AdminNavTab.ROOM_MANAGEMENT -> AdminRoomManagementScreen(
                         tournaments = tournaments,
@@ -176,12 +180,23 @@ fun MainAppContent(viewModel: MainViewModel) {
                         tournaments = tournaments,
                         currentTimeMillis = currentTickerMillis,
                         isSimulated = simulatedTimeOverride != null,
+                        paymentConfig = paymentConfig,
                         onResetRealTime = { viewModel.resetToRealTime() },
                         onSimulateTime = { tourney, mins ->
                             viewModel.setSimulatedTimeForTournament(tourney, mins)
                         },
                         onBroadcast = { title, msg ->
                             viewModel.sendAdminBroadcast(title, msg)
+                        },
+                        onUpdatePaymentConfig = { upiId, payeeName, note, qrUrl ->
+                            viewModel.updatePaymentConfig(upiId, payeeName, note, qrUrl)
+                        },
+                        onUploadPaymentQrCode = { ctx, uri, cb ->
+                            viewModel.uploadPaymentQrCode(ctx, uri, cb)
+                        },
+                        onResetPaymentQrCode = { viewModel.resetPaymentQrCode() },
+                        onUpdateTournamentFeeAndPrize = { tourneyId, fee, prize ->
+                            viewModel.updateTournamentFeeAndPrize(tourneyId, fee, prize)
                         },
                         onResetData = { viewModel.resetAllDataToDefault() },
                         onLogoutAdmin = { viewModel.logoutAdmin() }
@@ -243,14 +258,33 @@ fun MainAppContent(viewModel: MainViewModel) {
         }
     }
 
+    val adminLoginLoading by viewModel.adminLoginLoading.collectAsState()
+    val isFirebaseConfigured by viewModel.isFirebaseConfigured.collectAsState()
+
     // Modal Registration Form Dialog
     selectedTournamentForReg?.let { tournament ->
         RegistrationDialog(
             tournament = tournament,
-            currentUser = currentUser,
+            paymentConfig = paymentConfig,
             onDismiss = { viewModel.closeRegistrationDialog() },
-            onSubmit = { fullName, ffIgn, ffUid, phone, paymentRef ->
-                viewModel.submitRegistration(fullName, ffIgn, ffUid, phone, paymentRef)
+            onSubmit = { fullName, ffIgn, ffUid, phone, teamName, selectedSlot, paymentRef, paymentScreenshotUrl, chosenFee, winningPrize, onComplete ->
+                viewModel.submitRegistration(
+                    fullName = fullName,
+                    ffIgn = ffIgn,
+                    ffUid = ffUid,
+                    phone = phone,
+                    teamName = teamName,
+                    selectedSlot = selectedSlot,
+                    paymentRef = paymentRef,
+                    paymentScreenshotUrl = paymentScreenshotUrl,
+                    chosenFee = chosenFee,
+                    winningPrize = winningPrize,
+                    onComplete = onComplete
+                )
+            },
+            onNavigateToMyDashboard = {
+                viewModel.closeRegistrationDialog()
+                viewModel.setPlayerTab(PlayerNavTab.MY_REGISTRATIONS)
             }
         )
     }
@@ -259,12 +293,15 @@ fun MainAppContent(viewModel: MainViewModel) {
     if (showAdminLoginDialog) {
         AdminLoginDialog(
             onDismiss = { showAdminLoginDialog = false },
-            onLogin = { pass ->
-                val success = viewModel.authenticateAdmin(pass)
-                if (success) {
-                    showAdminLoginDialog = false
+            isLoading = adminLoginLoading,
+            isFirebaseConfigured = isFirebaseConfigured,
+            onLogin = { email, pass, callback ->
+                viewModel.authenticateAdminWithFirebase(email, pass) { success, err ->
+                    if (success) {
+                        showAdminLoginDialog = false
+                    }
+                    callback(success, err)
                 }
-                success
             }
         )
     }

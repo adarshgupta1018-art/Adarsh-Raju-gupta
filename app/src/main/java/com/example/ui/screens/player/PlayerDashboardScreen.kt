@@ -236,12 +236,12 @@ fun RegistrationCard(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column {
-                            Text(text = "PLAYER NAME", color = TextMuted, fontSize = 10.sp)
+                            Text(text = "PLAYER NAME", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             Text(text = registration.playerName, color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                         Column(horizontalAlignment = Alignment.End) {
-                            Text(text = "FREE FIRE UID", color = TextMuted, fontSize = 10.sp)
-                            Text(text = registration.ffUid, color = GoldLight, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text(text = "FREE FIRE IGN", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Text(text = registration.ffIgn, color = GoldLight, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                     }
 
@@ -252,11 +252,27 @@ fun RegistrationCard(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column {
-                            Text(text = "TOURNAMENT TIME", color = TextMuted, fontSize = 10.sp)
+                            Text(text = "FREE FIRE UID", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Text(text = registration.ffUid, color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(text = "TOURNAMENT", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Text(text = tournament?.title ?: "SOLO BR MATCH", color = GoldLight, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text(text = "MATCH TIME", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             Text(text = registration.tournamentTime, color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                         Column(horizontalAlignment = Alignment.End) {
-                            Text(text = "ENTRY FEE", color = TextMuted, fontSize = 10.sp)
+                            Text(text = "ENTRY FEE", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             Text(text = "₹${registration.entryFee}", color = EmeraldConfirmed, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                     }

@@ -12,6 +12,9 @@ interface TournamentDao {
     @Query("SELECT * FROM tournaments ORDER BY startHour ASC, startMinute ASC")
     fun getAllTournaments(): Flow<List<TournamentEntity>>
 
+    @Query("SELECT * FROM tournaments ORDER BY startHour ASC, startMinute ASC")
+    suspend fun getAllTournamentsSync(): List<TournamentEntity>
+
     @Query("SELECT * FROM tournaments WHERE id = :id LIMIT 1")
     suspend fun getTournamentById(id: String): TournamentEntity?
 
@@ -48,6 +51,9 @@ interface RegistrationDao {
     @Query("SELECT COUNT(*) FROM registrations WHERE tournamentId = :tournamentId AND status != 'REJECTED' AND status != 'CANCELLED'")
     suspend fun getActiveCountForTournament(tournamentId: String): Int
 
+    @Query("SELECT * FROM registrations WHERE tournamentId = :tournamentId AND selectedSlot = :slot AND status != 'REJECTED' AND status != 'CANCELLED' LIMIT 1")
+    suspend fun getRegistrationBySlot(tournamentId: String, slot: Int): RegistrationEntity?
+
     @Query("SELECT * FROM registrations WHERE id = :id LIMIT 1")
     suspend fun getRegistrationById(id: String): RegistrationEntity?
 
@@ -59,6 +65,21 @@ interface RegistrationDao {
 
     @Query("UPDATE registrations SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: String, status: com.example.data.model.RegistrationStatus)
+
+    @Query("UPDATE registrations SET paymentStatus = :paymentStatus WHERE id = :id")
+    suspend fun updatePaymentStatus(id: String, paymentStatus: String)
+
+    @Query("UPDATE registrations SET adminNotes = :notes WHERE id = :id")
+    suspend fun updateAdminNotes(id: String, notes: String)
+
+    @Query("UPDATE registrations SET status = :status, paymentStatus = :paymentStatus, adminNotes = :adminNotes WHERE id = :id")
+    suspend fun updateBookingDetails(id: String, status: com.example.data.model.RegistrationStatus, paymentStatus: String, adminNotes: String)
+
+    @Query("SELECT COUNT(*) FROM registrations")
+    suspend fun getTotalRegistrationCount(): Int
+
+    @Query("DELETE FROM registrations WHERE ffUid = :uid OR playerName = :name")
+    suspend fun deleteRegistrationsByPlayer(uid: String, name: String)
 
     @Query("DELETE FROM registrations")
     suspend fun clearAll()
